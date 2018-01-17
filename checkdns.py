@@ -4,67 +4,70 @@
 # by Carl Pearson - github.com/fleetcaptain
 
 import sys
-import dns.resolver
+import dnslib
 from optparse import OptionParser
 
-Resolver = dns.resolver.Resolver()
+
 
 # print header/banner
 def print_banner():
 	print ""
-	print "      ______              ___   _____  __  ______"
+	print "      ___ _                _     ____  __  _ ____"
 	print "     / __| |___ ____  ____| |__ |  _ \|  \| |    |"
 	print "    | /  |  _  \` __`|  __| / / | | | |   | | ---|"
 	print "    | \__| | | | |___| |__|   \ | |_| | |   |--- |"
-	print "     \___|_|_|_|_____|____|_|\_\|____/|_|\__|____/"
+	print "     \___|_|_|_|_____|____|_|\_\|____/|_|\__|____/ v1.1"
 	print ""
 	print "                             Coded by Carl Pearson"
 	print "                           github.com/fleetcaptain"
 	print ""
 
+
+
 # given a subdomain and resolver, query resolver to a) verify record is "live" (i.e. we get a reply) and b) see if it's an A or CNAME record
 def lookup(guess, name_server):
-	Resolver.nameservers = [name_server]
-	answer = None
+	#print 'Trying ' + guess + ' at ' + name_server
+	use_tcp = False
+	response = None
+	failed = False
+	record_type = ""
+	record_value = ""
+	query = dnslib.DNSRecord.question(guess, 'ANY')
 	try:
-		# obtain the DNS reply in DIG format, convert to string, and split newlines into an array
-		answer = str(Resolver.query(guess).response).split('\n')
+		response_q = query.send(name_server, 53, use_tcp, timeout = 3)
+		if response_q:
+			response = dnslib.DNSRecord.parse(response_q)
+	except KeyboardInterrupt:
+		print 'User exit'
+		exit()
 	except:
-		return "ERROR", "e"
-	# If we didn't get NXDOMAIN or like error, then proceed
-	'''
-	The answer in DIG format looks like this
-
-	id 35423
-	opcode QUERY
-	rcode NOERROR
-	flags QR RD RA
-	;QUESTION
-	myservice.example.com. IN A
-	;ANSWER
-	myservice.example.com. 299 IN CNAME myservice.cloudservice.net.
-	myservice.cloudservice.net. 9 IN A 500.600.700.800
-	;AUTHORITY
-	;ADDITIONAL
-
-	we grab the first line after ";ANSWER" - it's the first answer and the one we care about. 
-	May be the only answer depending on the specific host (like if it's an A record only 1 IP may be returned)
-	'''
-	answerline = ""
-	for x in range(0, len(answer)): # for each line
-		if answer[x] == ";ANSWER":
-			answerline = answer[x + 1] # first answer
-			break
-	lineitems = answerline.split(' ')
-	host = lineitems[len(lineitems) - 1] # host is the last line
-	host = host[:-1] # remove the trailing period
-	# determine if this is a CNAME or A record. A records can be interesting to find vulnerable hosts and CNAME
-	# records can be interesting for subdomain takeover
-	for item in lineitems:
-		if item == 'CNAME':
-			return "CNAME", host
-		elif item == 'A':
-			return "A", host
+		# probably socket timed out
+		print "ERROR - possible socket timeout when trying " + guess
+		pass
+	if response:
+		#print response
+		rcode = dnslib.RCODE[response.header.rcode]
+		if rcode == 'NOERROR' or rcode == 'NXDOMAIN':
+			# success, this is a valid subdomain
+			for r in response.rr:
+				rtype = None
+				try:
+					rtype = str(dnslib.QTYPE[r.rtype])
+				except:
+					rtype = str(r.rtype)
+				#print rtype
+				
+				if (rtype == 'CNAME'):
+					#print r.rdata
+					record_type = 'CNAME'
+					record_value = str(r.rdata)
+				elif (rtype == 'A' or rtype == 'AAAA'):
+					record_type = 'A'
+					record_value = str(r.rdata)
+		else:
+			print "ERROR - returned stats " + rcode + " when trying " + guess
+	return record_type, record_value
+	
 
 
 
@@ -111,31 +114,32 @@ print 'Checking subdomains, please wait...'
 
 # for each subdomain in the data
 for subdomain in data:
-	try:
-		name = subdomain.strip('\n').strip('\r')
-		if (domain != None and domain not in name):
-			(rtype, record) = lookup(name + '.' + domain, resolvers[server])
-		else:
-			(rtype, record) = lookup(name, resolvers[server])
+	if (' ' not in subdomain):
+		try:
+			name = subdomain.replace('\n', '').replace('\r', '')
+			if (domain != None and domain not in name):
+				(rtype, record) = lookup(name + '.' + domain, resolvers[server])
+			else:
+				(rtype, record) = lookup(name, resolvers[server])
 
-		# if the query did not return an error, then add result to appropriate array
-		if rtype != "ERROR":
-			if rtype == "CNAME":
-				cnames.append(name + " -->-- " + record)
-			elif rtype == "A":
-				ahosts.append(name + " -->-- " + record)
+			# if the query did not return an error, then add result to appropriate array
+			if rtype != "ERROR":
+				if rtype == "CNAME":
+					cnames.append(name + " -->-- " + record)
+				elif rtype == "A":
+					ahosts.append(name + " -->-- " + record)
 
-		# round robin the resolvers
-		server = server + 1
-		server = server % len(resolvers)
-		count = count + 1
+			# round robin the resolvers
+			server = server + 1
+			server = server % len(resolvers)
+			count = count + 1
 
-		# update user on progress so far
-		if (count % 30) == 0:
-			print str(count) + '/' + total
-	except KeyboardInterrupt:
-		print '\nUser exit'
-		exit()
+			# update user on progress so far
+			if (count % 30) == 0:
+				print str(count) + '/' + total
+		except KeyboardInterrupt:
+			print '\nUser exit'
+			exit()
 
 # sort the arrays for nicer alphabetical order
 ahosts.sort()
@@ -162,5 +166,4 @@ if (out_file != None):
 		f.write(cnames[x] + '\n')
 	print ''
 	print 'Results saved to ' + out_file
-
 
