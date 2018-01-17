@@ -46,6 +46,11 @@ CheckDNS is licensed under the GNU GPL license, which can be found [here](https:
 
 Please respect legal restrictions and conduct testing only against infrastructure which you have permission to target.
 
+## Dependencies
+
+CheckDNS uses the dnslib library - make sure you have it installed on your system before use. It can be downloaded [here](https://bitbucket.org/paulc/dnslib/) or installed on many systems using:
+
+``pip install dnslib``
 
 ## Version
-Version 1.0 1/15/18
+Version 1.1 1/16/18
