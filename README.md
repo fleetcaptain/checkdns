@@ -53,4 +53,4 @@ CheckDNS uses the dnslib library - make sure you have it installed on your syste
 ``pip install dnslib``
 
 ## Version
-Version 1.1 1/16/18
+Version 1.2 2/17/18
