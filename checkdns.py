@@ -140,6 +140,10 @@ for subdomain in data:
 		except KeyboardInterrupt:
 			print '\nUser exit'
 			exit()
+		except:
+			# Generally unknown error. Keep going
+			# Known errors: subdomain sample starting with a dot, ex .domain.com
+			continue
 
 # sort the arrays for nicer alphabetical order
 ahosts.sort()
